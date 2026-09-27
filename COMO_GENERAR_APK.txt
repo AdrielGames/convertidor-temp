@@ -1,0 +1,21 @@
+Convertidor de Temperatura — APK de prueba (Windows)
+
+Este paquete es tu proyecto Kivy listo para Buildozer.
+Desde este entorno NO se puede compilar el .apk nativo (hace falta
+Android SDK + NDK, varios GB y Linux).
+
+Camino más fácil en Windows, sin instalar Linux:
+
+1. Crea un repositorio vacío en GitHub.
+2. Sube TODOS los archivos de esta carpeta (incluido .github/workflows).
+3. En GitHub: pestaña Actions → "Build debug APK" → Run workflow.
+4. La primera vez tarda 20–40 minutos.
+5. Al terminar, descarga el artefacto convertidor-debug-apk (el .apk).
+6. En el teléfono: permite instalar apps de origen desconocido y abre el APK.
+
+Si usas WSL (Ubuntu) en tu PC:
+
+    pip install --user buildozer
+    buildozer -v android debug
+
+El APK queda en la carpeta bin/.

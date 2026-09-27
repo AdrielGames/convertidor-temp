@@ -1,0 +1,285 @@
+#:kivy 2.3.1
+# ---------------------------------------------------------
+# interfaz.kv
+# Diseño visual de la app "Convertir °C - °F - °K".
+# Aquí solo se define CÓMO se ve todo; la lógica vive en main.py
+# ---------------------------------------------------------
+
+<TarjetaEscala@BoxLayout>:
+    color_tarjeta: 0.15, 0.35, 0.75, 1
+    titulo: "CELSIUS"
+    id_valor: ""
+    orientation: "vertical"
+    canvas.before:
+        Color:
+            rgba: self.color_tarjeta
+        RoundedRectangle:
+            pos: self.pos
+            size: self.size
+            radius: [16]
+    Label:
+        text: root.titulo
+        font_size: 12
+        bold: True
+        color: 1, 1, 1, 0.85
+        size_hint_y: 0.3
+
+<BotonRapido@Button>:
+    background_color: 0, 0, 0, 0
+    background_normal: ""
+    canvas.before:
+        Color:
+            rgba: 0.2, 0.22, 0.27, 1
+        RoundedRectangle:
+            pos: self.pos
+            size: self.size
+            radius: [10]
+    color: 1, 1, 1, 1
+    font_size: 13
+
+<ConvertidorTemperatura>:
+    orientation: "vertical"
+    padding: 30
+    spacing: 12
+
+    # Fondo dinámico: cambia de azul (frío) a rojo (calor) según root.color_fondo
+    canvas.before:
+        Color:
+            rgba: root.color_fondo
+        Rectangle:
+            pos: self.pos
+            size: self.size
+
+    # ---------- ENCABEZADO ----------
+    Label:
+        text: "Convertidor de Temperatura"
+        font_size: 26
+        bold: True
+        color: 1, 1, 1, 1
+        size_hint_y: 0.11
+
+    Label:
+        text: "Celsius · Fahrenheit · Kelvin"
+        font_size: 14
+        color: 0.8, 0.83, 0.87, 1
+        size_hint_y: 0.06
+
+    # ---------- TARJETAS DE RESULTADOS ----------
+    BoxLayout:
+        orientation: "horizontal"
+        size_hint_y: 0.22
+        spacing: 10
+
+        TarjetaEscala:
+            color_tarjeta: 0.15, 0.35, 0.75, 1
+            titulo: "CELSIUS"
+            Label:
+                id: lbl_celsius
+                text: "0.0 °C"
+                font_size: 20
+                bold: True
+                color: 1, 1, 1, 1
+
+        TarjetaEscala:
+            color_tarjeta: 0.75, 0.25, 0.2, 1
+            titulo: "FAHRENHEIT"
+            Label:
+                id: lbl_fahrenheit
+                text: "32.0 °F"
+                font_size: 20
+                bold: True
+                color: 1, 1, 1, 1
+
+        TarjetaEscala:
+            color_tarjeta: 0.3, 0.25, 0.55, 1
+            titulo: "KELVIN"
+            Label:
+                id: lbl_kelvin
+                text: "273.1 K"
+                font_size: 20
+                bold: True
+                color: 1, 1, 1, 1
+
+    # ---------- CAMBIO DE MODO DEL SLIDER ----------
+    Button:
+        id: btn_modo
+        text: "Cambiar a °F"
+        size_hint_y: 0.08
+        font_size: 13
+        background_color: 0, 0, 0, 0
+        background_normal: ""
+        color: 0.85, 0.9, 1, 1
+        canvas.before:
+            Color:
+                rgba: 0.16, 0.18, 0.22, 1
+            RoundedRectangle:
+                pos: self.pos
+                size: self.size
+                radius: [12]
+        on_release: root.cambiar_modo()
+
+    # ---------- CONTROL DESLIZANTE ----------
+    BoxLayout:
+        orientation: "vertical"
+        size_hint_y: 0.2
+        padding: 16, 12
+        spacing: 6
+        canvas.before:
+            Color:
+                rgba: 0.16, 0.18, 0.22, 1
+            RoundedRectangle:
+                pos: self.pos
+                size: self.size
+                radius: [16]
+
+        # Fila superior: unidad activa + valor grande en tiempo real
+        BoxLayout:
+            orientation: "horizontal"
+            size_hint_y: 0.45
+
+            Label:
+                id: lbl_unidad_slider
+                text: "Deslizador en °C"
+                font_size: 13
+                color: 0.75, 0.8, 0.85, 1
+                halign: "left"
+                text_size: self.size
+                valign: "middle"
+
+            Label:
+                text: "{:.1f}°".format(slider.value)
+                font_size: 20
+                bold: True
+                color: root.color_acento
+                halign: "right"
+                text_size: self.size
+                valign: "middle"
+
+        Slider:
+            id: slider
+            min: -40
+            max: 150
+            value: 0
+            step: 1
+            size_hint_y: 0.35
+            cursor_size: (26, 26)
+            padding: 14
+            value_track: True
+            value_track_color: root.color_acento
+            value_track_width: 5
+            on_value: root.convertir_desde_slider(self.value)
+
+        # Fila inferior: límites actuales del rango
+        BoxLayout:
+            orientation: "horizontal"
+            size_hint_y: 0.2
+
+            Label:
+                text: "{:.0f}°".format(slider.min)
+                font_size: 11
+                color: 0.55, 0.6, 0.65, 1
+                halign: "left"
+                text_size: self.size
+
+            Label:
+                text: "{:.0f}°".format(slider.max)
+                font_size: 11
+                color: 0.55, 0.6, 0.65, 1
+                halign: "right"
+                text_size: self.size
+
+    # ---------- ENTRADA MANUAL ----------
+    BoxLayout:
+        orientation: "horizontal"
+        size_hint_y: 0.09
+        spacing: 8
+
+        TextInput:
+            id: txt_manual
+            hint_text: "Escribe un valor exacto..."
+            multiline: False
+            input_filter: "float"
+            font_size: 14
+            padding: 12, 12
+            background_color: 0.16, 0.18, 0.22, 1
+            foreground_color: 1, 1, 1, 1
+            hint_text_color: 0.55, 0.6, 0.65, 1
+            cursor_color: 1, 1, 1, 1
+            on_text_validate: root.establecer_valor_manual(self.text)
+
+        Button:
+            text: "Aplicar"
+            size_hint_x: 0.3
+            background_color: 0, 0, 0, 0
+            background_normal: ""
+            color: 1, 1, 1, 1
+            canvas.before:
+                Color:
+                    rgba: 0.15, 0.45, 0.35, 1
+                RoundedRectangle:
+                    pos: self.pos
+                    size: self.size
+                    radius: [10]
+            on_release: root.establecer_valor_manual(txt_manual.text)
+
+    # ---------- BOTONES RÁPIDOS ----------
+    BoxLayout:
+        orientation: "horizontal"
+        size_hint_y: 0.08
+        spacing: 8
+
+        BotonRapido:
+            text: "Congelación (0°C)"
+            on_release: root.establecer_valor_rapido(0)
+
+        BotonRapido:
+            text: "Cuerpo (37°C)"
+            on_release: root.establecer_valor_rapido(37)
+
+        BotonRapido:
+            text: "Ebullición (100°C)"
+            on_release: root.establecer_valor_rapido(100)
+
+    # ---------- INFORMACIÓN IMPORTANTE ----------
+    BoxLayout:
+        orientation: "vertical"
+        size_hint_y: 0.2
+        padding: 12
+        spacing: 3
+        canvas.before:
+            Color:
+                rgba: 0.16, 0.18, 0.22, 1
+            RoundedRectangle:
+                pos: self.pos
+                size: self.size
+                radius: [14]
+
+        Label:
+            text: "Fórmulas utilizadas"
+            font_size: 13
+            bold: True
+            color: 0.9, 0.9, 0.9, 1
+            size_hint_y: 0.3
+            halign: "left"
+            text_size: self.size
+
+        Label:
+            text: "F = (C × 9/5) + 32     |     K = C + 273.15"
+            font_size: 12
+            color: 0.65, 0.7, 0.75, 1
+            halign: "left"
+            text_size: self.size
+
+        Label:
+            text: "Rango del deslizador: -40 a 150 °C (-40 a 302 °F)"
+            font_size: 11
+            color: 0.55, 0.6, 0.65, 1
+            halign: "left"
+            text_size: self.size
+
+        Label:
+            text: "El último valor y modo usados se guardan automáticamente"
+            font_size: 11
+            color: 0.55, 0.6, 0.65, 1
+            halign: "left"
+            text_size: self.size
