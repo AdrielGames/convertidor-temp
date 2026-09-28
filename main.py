@@ -7,7 +7,11 @@
 # Guarda el último valor usado y lo restaura al abrir la app.
 # ---------------------------------------------------------
 
-from os.path import dirname, join
+import os
+from os.path import dirname, join, exists
+
+# Reduce posibles crashes de render en algunos dispositivos Android
+os.environ.setdefault("KIVY_NO_CONSOLELOG", "0")
 
 from kivy.app import App
 from kivy.uix.boxlayout import BoxLayout
@@ -16,6 +20,10 @@ from kivy.properties import NumericProperty, StringProperty, ListProperty
 from kivy.animation import Animation
 from kivy.storage.jsonstore import JsonStore
 from kivy.resources import resource_add_path
+from kivy.config import Config
+
+# Evita problemas de multisampling en algunos GPUs Android
+Config.set("graphics", "multisamples", "0")
 
 from conversiones import (
     celsius_a_fahrenheit,
@@ -34,12 +42,21 @@ resource_add_path(DIR_APP)
 
 
 def _crear_almacen():
-    app = App.get_running_app()
-    if app is not None:
-        ruta = join(app.user_data_dir, "ajustes_temperatura.json")
-    else:
-        ruta = join(DIR_APP, "ajustes_temperatura.json")
-    return JsonStore(ruta)
+    """Crea el JsonStore en una ruta escribible (user_data_dir en Android)."""
+    try:
+        app = App.get_running_app()
+        if app is not None:
+            data_dir = app.user_data_dir
+            # Asegura que el directorio exista (necesario en Android)
+            if not exists(data_dir):
+                os.makedirs(data_dir, exist_ok=True)
+            ruta = join(data_dir, "ajustes_temperatura.json")
+        else:
+            ruta = join(DIR_APP, "ajustes_temperatura.json")
+        return JsonStore(ruta)
+    except Exception:
+        # Si falla el almacenamiento, la app sigue funcionando sin guardar estado
+        return None
 
 
 class ConvertidorTemperatura(BoxLayout):
@@ -65,8 +82,15 @@ class ConvertidorTemperatura(BoxLayout):
             self.almacen = _crear_almacen()
         except Exception:
             self.almacen = None
-        self._cargar_estado_guardado()
-        self._refrescar_todo(animar=False)
+        try:
+            self._cargar_estado_guardado()
+            self._refrescar_todo(animar=False)
+        except Exception:
+            # Si algo falla al cargar estado, dejamos valores por defecto
+            self.celsius_actual = 0.0
+            self.celsius_mostrado = 0.0
+            self._refrescar_textos()
+            self._refrescar_color()
 
     def convertir_desde_slider(self, valor):
         if self.modo == "C":
@@ -171,7 +195,8 @@ class ConvertidorTemperatura(BoxLayout):
             datos = self.almacen.get("ultimo_valor")
         except Exception:
             return
-        self.celsius_actual = datos.get("celsius", 0.0)
+
+        self.celsius_actual = float(datos.get("celsius", 0.0))
         modo_guardado = datos.get("modo", "C")
 
         if modo_guardado == "F":
@@ -183,7 +208,11 @@ class ConvertidorTemperatura(BoxLayout):
             self.ids.lbl_unidad_slider.text = "Deslizador en °F"
         else:
             self.modo = "C"
+            self.ids.slider.min = LIMITE_MIN_C
+            self.ids.slider.max = LIMITE_MAX_C
             self.ids.slider.value = self.celsius_actual
+            self.ids.btn_modo.text = "Cambiar a °F"
+            self.ids.lbl_unidad_slider.text = "Deslizador en °C"
 
 
 class TemperaturaApp(App):

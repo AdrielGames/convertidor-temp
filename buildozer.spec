@@ -4,8 +4,8 @@ package.name = convertidor
 package.domain = org.conversor.temp
 source.dir = .
 source.include_exts = py,png,jpg,kv,atlas,json
-version = 0.2
-requirements = python3,kivy==2.3.1
+version = 0.3
+requirements = python3,kivy==2.3.1,pillow,pyjnius,android
 orientation = portrait
 fullscreen = 0
 android.permissions = VIBRATE
