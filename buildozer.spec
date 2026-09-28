@@ -11,12 +11,12 @@ fullscreen = 0
 android.permissions = VIBRATE
 android.api = 34
 android.minapi = 24
-android.ndk = 28c
+android.ndk = 25b
 android.archs = arm64-v8a
 android.accept_sdk_license = True
 android.allow_backup = True
 android.presplash_color = #10131A
-p4a.branch = master
+p4a.branch = v2024.01.21
 
 [buildozer]
 log_level = 2
