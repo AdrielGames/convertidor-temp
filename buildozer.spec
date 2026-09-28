@@ -4,7 +4,7 @@ package.name = convertidor
 package.domain = org.conversor.temp
 source.dir = .
 source.include_exts = py,png,jpg,kv,atlas,json
-version = 0.1
+version = 0.2
 requirements = python3,kivy==2.3.1
 orientation = portrait
 fullscreen = 0
@@ -12,7 +12,7 @@ android.permissions = VIBRATE
 android.api = 34
 android.minapi = 24
 android.ndk = 25b
-android.archs = arm64-v8a
+android.archs = arm64-v8a,x86_64
 android.accept_sdk_license = True
 android.allow_backup = True
 android.presplash_color = #10131A
