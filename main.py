@@ -1,29 +1,29 @@
 # main.py
 # ---------------------------------------------------------
 # Convertir °C - °F - °K
-# App que convierte entre Celsius, Fahrenheit y Kelvin.
-# Se puede deslizar en °C o en °F (modo intercambiable),
-# escribir un valor manualmente, o tocar un botón rápido.
-# Guarda el último valor usado y lo restaura al abrir la app.
 # ---------------------------------------------------------
 
 import os
+import traceback
 from os.path import dirname, join, exists
 
-# Reduce posibles crashes de render en algunos dispositivos Android
+# IMPORTANTE: Config y env ANTES de importar el resto de Kivy
 os.environ.setdefault("KIVY_NO_CONSOLELOG", "0")
+os.environ.setdefault("KIVY_GL_BACKEND", "sdl2")
+
+from kivy.config import Config
+Config.set("graphics", "multisamples", "0")
+Config.set("kivy", "log_level", "debug")
 
 from kivy.app import App
 from kivy.uix.boxlayout import BoxLayout
+from kivy.uix.label import Label
 from kivy.lang import Builder
 from kivy.properties import NumericProperty, StringProperty, ListProperty
 from kivy.animation import Animation
 from kivy.storage.jsonstore import JsonStore
 from kivy.resources import resource_add_path
-from kivy.config import Config
-
-# Evita problemas de multisampling en algunos GPUs Android
-Config.set("graphics", "multisamples", "0")
+from kivy.clock import Clock
 
 from conversiones import (
     celsius_a_fahrenheit,
@@ -42,31 +42,22 @@ resource_add_path(DIR_APP)
 
 
 def _crear_almacen():
-    """Crea el JsonStore en una ruta escribible (user_data_dir en Android)."""
+    """JsonStore en ruta escribible. Nunca debe crashear la app."""
     try:
         app = App.get_running_app()
-        if app is not None:
-            data_dir = app.user_data_dir
-            # Asegura que el directorio exista (necesario en Android)
-            if not exists(data_dir):
-                os.makedirs(data_dir, exist_ok=True)
-            ruta = join(data_dir, "ajustes_temperatura.json")
-        else:
-            ruta = join(DIR_APP, "ajustes_temperatura.json")
+        if app is None:
+            return None
+        data_dir = app.user_data_dir
+        if not exists(data_dir):
+            os.makedirs(data_dir, exist_ok=True)
+        ruta = join(data_dir, "ajustes_temperatura.json")
         return JsonStore(ruta)
-    except Exception:
-        # Si falla el almacenamiento, la app sigue funcionando sin guardar estado
+    except Exception as e:
+        print("[storage] error creando almacen:", e)
         return None
 
 
 class ConvertidorTemperatura(BoxLayout):
-    """
-    Layout principal de la app. Mantiene la temperatura actual
-    siempre en Celsius internamente (celsius_actual) sin importar
-    en qué modo esté el slider, y a partir de ahí calcula todo
-    lo demás (Fahrenheit, Kelvin, color de fondo, etc).
-    """
-
     modo = StringProperty("C")
     celsius_actual = NumericProperty(0.0)
     celsius_mostrado = NumericProperty(0.0)
@@ -76,76 +67,91 @@ class ConvertidorTemperatura(BoxLayout):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         self.almacen = None
+        # Cargar estado DESPUÉS de que el árbol de widgets esté listo
+        Clock.schedule_once(self._inicio_seguro, 0)
 
-    def on_kv_post(self, base_widget):
+    def _inicio_seguro(self, dt):
         try:
             self.almacen = _crear_almacen()
-        except Exception:
-            self.almacen = None
-        try:
             self._cargar_estado_guardado()
             self._refrescar_todo(animar=False)
-        except Exception:
-            # Si algo falla al cargar estado, dejamos valores por defecto
-            self.celsius_actual = 0.0
-            self.celsius_mostrado = 0.0
-            self._refrescar_textos()
-            self._refrescar_color()
+        except Exception as e:
+            print("[inicio] error:", e)
+            traceback.print_exc()
+            try:
+                self.celsius_actual = 0.0
+                self.celsius_mostrado = 0.0
+                self._refrescar_textos()
+                self._refrescar_color()
+            except Exception:
+                pass
 
     def convertir_desde_slider(self, valor):
-        if self.modo == "C":
-            self.celsius_actual = valor
-        else:
-            self.celsius_actual = fahrenheit_a_celsius(valor)
-
-        self.celsius_mostrado = self.celsius_actual
-        self._refrescar_textos()
-        self._refrescar_color()
-        self._guardar_estado()
+        try:
+            if self.modo == "C":
+                self.celsius_actual = valor
+            else:
+                self.celsius_actual = fahrenheit_a_celsius(valor)
+            self.celsius_mostrado = self.celsius_actual
+            self._refrescar_textos()
+            self._refrescar_color()
+            self._guardar_estado()
+        except Exception as e:
+            print("[slider] error:", e)
 
     def establecer_valor_manual(self, texto):
-        texto = texto.strip().replace(",", ".")
-        if not texto:
-            return
         try:
-            valor = float(texto)
-        except ValueError:
+            texto = (texto or "").strip().replace(",", ".")
+            if not texto:
+                return
+            try:
+                valor = float(texto)
+            except ValueError:
+                if "txt_manual" in self.ids:
+                    self.ids.txt_manual.text = ""
+                    self.ids.txt_manual.hint_text = "Valor inválido"
+                return
+
+            if self.modo == "C":
+                valor = max(LIMITE_MIN_C, min(LIMITE_MAX_C, valor))
+            else:
+                valor = max(LIMITE_MIN_F, min(LIMITE_MAX_F, valor))
+
+            self.ids.slider.value = valor
             self.ids.txt_manual.text = ""
-            self.ids.txt_manual.hint_text = "Valor inválido"
-            return
-
-        if self.modo == "C":
-            valor = max(LIMITE_MIN_C, min(LIMITE_MAX_C, valor))
-        else:
-            valor = max(LIMITE_MIN_F, min(LIMITE_MAX_F, valor))
-
-        self.ids.slider.value = valor
-        self.ids.txt_manual.text = ""
-        self._animar_a_valor_actual()
+            self._animar_a_valor_actual()
+        except Exception as e:
+            print("[manual] error:", e)
 
     def establecer_valor_rapido(self, celsius):
-        if self.modo == "C":
-            self.ids.slider.value = celsius
-        else:
-            self.ids.slider.value = celsius_a_fahrenheit(celsius)
-        self._animar_a_valor_actual()
+        try:
+            if self.modo == "C":
+                self.ids.slider.value = celsius
+            else:
+                self.ids.slider.value = celsius_a_fahrenheit(celsius)
+            self._animar_a_valor_actual()
+        except Exception as e:
+            print("[rapido] error:", e)
 
     def cambiar_modo(self):
-        if self.modo == "C":
-            self.modo = "F"
-            self.ids.slider.min = LIMITE_MIN_F
-            self.ids.slider.max = LIMITE_MAX_F
-            self.ids.slider.value = celsius_a_fahrenheit(self.celsius_actual)
-            self.ids.btn_modo.text = "Cambiar a °C"
-            self.ids.lbl_unidad_slider.text = "Deslizador en °F"
-        else:
-            self.modo = "C"
-            self.ids.slider.min = LIMITE_MIN_C
-            self.ids.slider.max = LIMITE_MAX_C
-            self.ids.slider.value = self.celsius_actual
-            self.ids.btn_modo.text = "Cambiar a °F"
-            self.ids.lbl_unidad_slider.text = "Deslizador en °C"
-        self._guardar_estado()
+        try:
+            if self.modo == "C":
+                self.modo = "F"
+                self.ids.slider.min = LIMITE_MIN_F
+                self.ids.slider.max = LIMITE_MAX_F
+                self.ids.slider.value = celsius_a_fahrenheit(self.celsius_actual)
+                self.ids.btn_modo.text = "Cambiar a °C"
+                self.ids.lbl_unidad_slider.text = "Deslizador en °F"
+            else:
+                self.modo = "C"
+                self.ids.slider.min = LIMITE_MIN_C
+                self.ids.slider.max = LIMITE_MAX_C
+                self.ids.slider.value = self.celsius_actual
+                self.ids.btn_modo.text = "Cambiar a °F"
+                self.ids.lbl_unidad_slider.text = "Deslizador en °C"
+            self._guardar_estado()
+        except Exception as e:
+            print("[modo] error:", e)
 
     def _animar_a_valor_actual(self):
         Animation.cancel_all(self, "celsius_mostrado")
@@ -163,16 +169,25 @@ class ConvertidorTemperatura(BoxLayout):
             self._refrescar_color()
 
     def _refrescar_textos(self):
-        c = self.celsius_mostrado
-        f = celsius_a_fahrenheit(c)
-        k = celsius_a_kelvin(c)
-        self.ids.lbl_celsius.text = f"{c:.1f} °C"
-        self.ids.lbl_fahrenheit.text = f"{f:.1f} °F"
-        self.ids.lbl_kelvin.text = f"{k:.1f} K"
+        try:
+            c = self.celsius_mostrado
+            f = celsius_a_fahrenheit(c)
+            k = celsius_a_kelvin(c)
+            if "lbl_celsius" in self.ids:
+                self.ids.lbl_celsius.text = f"{c:.1f} °C"
+            if "lbl_fahrenheit" in self.ids:
+                self.ids.lbl_fahrenheit.text = f"{f:.1f} °F"
+            if "lbl_kelvin" in self.ids:
+                self.ids.lbl_kelvin.text = f"{k:.1f} K"
+        except Exception as e:
+            print("[textos] error:", e)
 
     def _refrescar_color(self):
-        self.color_fondo = color_fondo_para_temperatura(self.celsius_mostrado)
-        self.color_acento = color_acento_para_temperatura(self.celsius_mostrado)
+        try:
+            self.color_fondo = color_fondo_para_temperatura(self.celsius_mostrado)
+            self.color_acento = color_acento_para_temperatura(self.celsius_mostrado)
+        except Exception as e:
+            print("[color] error:", e)
 
     def _guardar_estado(self):
         if self.almacen is None:
@@ -180,11 +195,11 @@ class ConvertidorTemperatura(BoxLayout):
         try:
             self.almacen.put(
                 "ultimo_valor",
-                celsius=self.celsius_actual,
-                modo=self.modo,
+                celsius=float(self.celsius_actual),
+                modo=str(self.modo),
             )
-        except Exception:
-            pass
+        except Exception as e:
+            print("[guardar] error:", e)
 
     def _cargar_estado_guardado(self):
         if self.almacen is None:
@@ -193,34 +208,72 @@ class ConvertidorTemperatura(BoxLayout):
             if not self.almacen.exists("ultimo_valor"):
                 return
             datos = self.almacen.get("ultimo_valor")
-        except Exception:
-            return
+            self.celsius_actual = float(datos.get("celsius", 0.0))
+            modo_guardado = datos.get("modo", "C")
 
-        self.celsius_actual = float(datos.get("celsius", 0.0))
-        modo_guardado = datos.get("modo", "C")
+            if "slider" not in self.ids:
+                return
 
-        if modo_guardado == "F":
-            self.modo = "F"
-            self.ids.slider.min = LIMITE_MIN_F
-            self.ids.slider.max = LIMITE_MAX_F
-            self.ids.slider.value = celsius_a_fahrenheit(self.celsius_actual)
-            self.ids.btn_modo.text = "Cambiar a °C"
-            self.ids.lbl_unidad_slider.text = "Deslizador en °F"
-        else:
-            self.modo = "C"
-            self.ids.slider.min = LIMITE_MIN_C
-            self.ids.slider.max = LIMITE_MAX_C
-            self.ids.slider.value = self.celsius_actual
-            self.ids.btn_modo.text = "Cambiar a °F"
-            self.ids.lbl_unidad_slider.text = "Deslizador en °C"
+            if modo_guardado == "F":
+                self.modo = "F"
+                self.ids.slider.min = LIMITE_MIN_F
+                self.ids.slider.max = LIMITE_MAX_F
+                self.ids.slider.value = celsius_a_fahrenheit(self.celsius_actual)
+                if "btn_modo" in self.ids:
+                    self.ids.btn_modo.text = "Cambiar a °C"
+                if "lbl_unidad_slider" in self.ids:
+                    self.ids.lbl_unidad_slider.text = "Deslizador en °F"
+            else:
+                self.modo = "C"
+                self.ids.slider.min = LIMITE_MIN_C
+                self.ids.slider.max = LIMITE_MAX_C
+                self.ids.slider.value = self.celsius_actual
+                if "btn_modo" in self.ids:
+                    self.ids.btn_modo.text = "Cambiar a °F"
+                if "lbl_unidad_slider" in self.ids:
+                    self.ids.lbl_unidad_slider.text = "Deslizador en °C"
+        except Exception as e:
+            print("[cargar] error:", e)
+            traceback.print_exc()
 
 
 class TemperaturaApp(App):
     def build(self):
-        kv_path = join(DIR_APP, "interfaz.kv")
-        Builder.load_file(kv_path)
-        return ConvertidorTemperatura()
+        try:
+            # Preferir nombre simple (resource path) por si __file__ falla en Android
+            kv_candidates = [
+                join(DIR_APP, "interfaz.kv"),
+                "interfaz.kv",
+            ]
+            loaded = False
+            for kv_path in kv_candidates:
+                try:
+                    if exists(kv_path) or kv_path == "interfaz.kv":
+                        Builder.load_file(kv_path)
+                        loaded = True
+                        print("[build] KV cargado desde:", kv_path)
+                        break
+                except Exception as e:
+                    print("[build] no se pudo cargar", kv_path, ":", e)
+            if not loaded:
+                print("[build] AVISO: no se cargó interfaz.kv")
+            return ConvertidorTemperatura()
+        except Exception as e:
+            print("[build] ERROR FATAL:", e)
+            traceback.print_exc()
+            # Pantalla de error mínima para no morir en silencio
+            root = BoxLayout(orientation="vertical", padding=20)
+            root.add_widget(Label(
+                text="Error al iniciar:\n" + str(e),
+                color=(1, 0.3, 0.3, 1),
+            ))
+            return root
 
 
 if __name__ == "__main__":
-    TemperaturaApp().run()
+    try:
+        TemperaturaApp().run()
+    except Exception as e:
+        print("[run] ERROR FATAL:", e)
+        traceback.print_exc()
+        raise
