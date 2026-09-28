@@ -7,12 +7,15 @@
 # Guarda el último valor usado y lo restaura al abrir la app.
 # ---------------------------------------------------------
 
+from os.path import dirname, join
+
 from kivy.app import App
 from kivy.uix.boxlayout import BoxLayout
 from kivy.lang import Builder
 from kivy.properties import NumericProperty, StringProperty, ListProperty
 from kivy.animation import Animation
 from kivy.storage.jsonstore import JsonStore
+from kivy.resources import resource_add_path
 
 from conversiones import (
     celsius_a_fahrenheit,
@@ -26,9 +29,17 @@ from conversiones import (
     LIMITE_MAX_F,
 )
 
-# Archivo donde se guarda el último valor y modo usados.
-# Se crea automáticamente junto al ejecutable la primera vez que se usa.
-ALMACEN = JsonStore("ajustes_temperatura.json")
+DIR_APP = dirname(__file__)
+resource_add_path(DIR_APP)
+
+
+def _crear_almacen():
+    app = App.get_running_app()
+    if app is not None:
+        ruta = join(app.user_data_dir, "ajustes_temperatura.json")
+    else:
+        ruta = join(DIR_APP, "ajustes_temperatura.json")
+    return JsonStore(ruta)
 
 
 class ConvertidorTemperatura(BoxLayout):
@@ -39,50 +50,36 @@ class ConvertidorTemperatura(BoxLayout):
     lo demás (Fahrenheit, Kelvin, color de fondo, etc).
     """
 
-    # Modo del slider: "C" (Celsius) o "F" (Fahrenheit)
     modo = StringProperty("C")
-
-    # Temperatura actual en Celsius (fuente única de verdad)
     celsius_actual = NumericProperty(0.0)
-
-    # Valor animado que se muestra en pantalla (para transiciones suaves
-    # cuando el cambio viene de un botón rápido o de texto, no del slider)
     celsius_mostrado = NumericProperty(0.0)
-
-    # Color de fondo, recalculado cada vez que cambia la temperatura
     color_fondo = ListProperty([0.09, 0.11, 0.15, 1])
-
-    # Color de acento (más brillante) usado en el relleno del slider
     color_acento = ListProperty([0.3, 0.55, 0.95, 1])
 
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.almacen = None
+
     def on_kv_post(self, base_widget):
-        """Se ejecuta justo después de cargar el .kv: aquí restauramos
-        el último valor guardado, si existe."""
+        try:
+            self.almacen = _crear_almacen()
+        except Exception:
+            self.almacen = None
         self._cargar_estado_guardado()
         self._refrescar_todo(animar=False)
 
-    # ------------------------------------------------------------------
-    # Entradas de valor (slider, texto, botones rápidos)
-    # ------------------------------------------------------------------
-
     def convertir_desde_slider(self, valor):
-        """Se llama en cada movimiento del Slider. 'valor' está en la
-        unidad del modo actual (°C o °F)."""
         if self.modo == "C":
             self.celsius_actual = valor
         else:
             self.celsius_actual = fahrenheit_a_celsius(valor)
 
-        # El slider ya se mueve suavemente por sí solo: no animamos,
-        # solo refrescamos texto/color al instante para que no haya retraso.
         self.celsius_mostrado = self.celsius_actual
         self._refrescar_textos()
         self._refrescar_color()
         self._guardar_estado()
 
     def establecer_valor_manual(self, texto):
-        """Se llama al confirmar el TextInput. Interpreta el número
-        escrito según el modo actual del slider."""
         texto = texto.strip().replace(",", ".")
         if not texto:
             return
@@ -98,13 +95,11 @@ class ConvertidorTemperatura(BoxLayout):
         else:
             valor = max(LIMITE_MIN_F, min(LIMITE_MAX_F, valor))
 
-        self.ids.slider.value = valor  # dispara convertir_desde_slider
+        self.ids.slider.value = valor
         self.ids.txt_manual.text = ""
         self._animar_a_valor_actual()
 
     def establecer_valor_rapido(self, celsius):
-        """Botones rápidos (congelación, cuerpo humano, ebullición).
-        Siempre reciben el valor en Celsius y lo convierten al modo activo."""
         if self.modo == "C":
             self.ids.slider.value = celsius
         else:
@@ -112,8 +107,6 @@ class ConvertidorTemperatura(BoxLayout):
         self._animar_a_valor_actual()
 
     def cambiar_modo(self):
-        """Alterna el slider entre modo °C y modo °F, conservando la
-        misma temperatura real (solo cambia la unidad de la escala)."""
         if self.modo == "C":
             self.modo = "F"
             self.ids.slider.min = LIMITE_MIN_F
@@ -130,14 +123,7 @@ class ConvertidorTemperatura(BoxLayout):
             self.ids.lbl_unidad_slider.text = "Deslizador en °C"
         self._guardar_estado()
 
-    # ------------------------------------------------------------------
-    # Refresco visual
-    # ------------------------------------------------------------------
-
     def _animar_a_valor_actual(self):
-        """Anima celsius_mostrado hasta celsius_actual (usado en botones
-        rápidos y entrada manual, donde el salto no es gradual como
-        al arrastrar el slider)."""
         Animation.cancel_all(self, "celsius_mostrado")
         anim = Animation(celsius_mostrado=self.celsius_actual, duration=0.35, t="out_cubic")
         anim.bind(on_progress=lambda *a: self._refrescar_textos())
@@ -164,26 +150,27 @@ class ConvertidorTemperatura(BoxLayout):
         self.color_fondo = color_fondo_para_temperatura(self.celsius_mostrado)
         self.color_acento = color_acento_para_temperatura(self.celsius_mostrado)
 
-    # ------------------------------------------------------------------
-    # Persistencia (recuerda el último valor y modo al reabrir la app)
-    # ------------------------------------------------------------------
-
     def _guardar_estado(self):
+        if self.almacen is None:
+            return
         try:
-            ALMACEN.put(
+            self.almacen.put(
                 "ultimo_valor",
                 celsius=self.celsius_actual,
                 modo=self.modo,
             )
         except Exception:
-            # Si el almacenamiento falla (ej. sin permisos de escritura),
-            # la app sigue funcionando normalmente, solo sin recordar.
             pass
 
     def _cargar_estado_guardado(self):
-        if not ALMACEN.exists("ultimo_valor"):
+        if self.almacen is None:
             return
-        datos = ALMACEN.get("ultimo_valor")
+        try:
+            if not self.almacen.exists("ultimo_valor"):
+                return
+            datos = self.almacen.get("ultimo_valor")
+        except Exception:
+            return
         self.celsius_actual = datos.get("celsius", 0.0)
         modo_guardado = datos.get("modo", "C")
 
@@ -201,7 +188,8 @@ class ConvertidorTemperatura(BoxLayout):
 
 class TemperaturaApp(App):
     def build(self):
-        Builder.load_file("interfaz.kv")
+        kv_path = join(DIR_APP, "interfaz.kv")
+        Builder.load_file(kv_path)
         return ConvertidorTemperatura()
 
 
