@@ -4,7 +4,7 @@ package.name = convertidor
 package.domain = org.conversor.temp
 source.dir = .
 source.include_exts = py,png,jpg,kv,atlas,json
-version = 0.4
+version = 0.5
 requirements = python3,kivy==2.3.1,pillow
 orientation = portrait
 fullscreen = 0
